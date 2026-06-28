@@ -1,13 +1,13 @@
 name: PSE collector
 on:
   schedule:
-    - cron: '*/30 * * * *'      # kazdych 30 minut
-  workflow_dispatch:             # rucni spusteni tlacitkem
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   collect:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
