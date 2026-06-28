@@ -1,0 +1,24 @@
+name: PSE collector
+on:
+  schedule:
+    - cron: '*/30 * * * *'      # kazdych 30 minut
+  workflow_dispatch:             # umozni rucni spusteni tlacitkem
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install requests pandas pyarrow
+      - run: python collector.py
+      - run: |
+          git config user.name "pse-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/
+          git commit -m "snapshot $(date -u +%Y-%m-%dT%H:%M)" || echo "nic noveho"
+          git push
