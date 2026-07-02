@@ -3,6 +3,10 @@ CLAUDE.md
 reports/
 .claude/
 
+# Tokeny a tajemství — NIKDY do gitu (pro Actions používat GitHub Secrets)
+.env
+*.token
+
 # Velká surová data — drž mimo git
 data_raw/
 
