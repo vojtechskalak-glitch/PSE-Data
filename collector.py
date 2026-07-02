@@ -127,3 +127,49 @@ for nazev, (endpoint, dny_arch) in ARCHIVY.items():
             print(f"{nazev} {den}: {'REVIZE' if stary is not None else 'prvni otisk'} (+{len(novy)} radku, verzi {verze})")
         except Exception as e:
             print(f"{nazev} {den}: CHYBA {type(e).__name__}: {e} — pokracuji")
+
+# ---------- denni PL intraday statistiky: TGE RDB (CT+IDA, PLN) + Nord Pool kontrakty (EUR) ----------
+# Idempotentni: jen vcerejsi den, jen pokud soubor neexistuje -> 48 pokusu denne, zadny novy workflow.
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+TGE_SLOUPCE = ["instrument", "trvani_min",
+    "ct_min", "ct_max", "ct_vwap", "ct_vol", "ct_vol_kup", "ct_vol_prod",
+    "ida1_eur", "ida1_pln", "ida1_vol", "ida1_vol_kup", "ida1_vol_prod",
+    "ida2_eur", "ida2_pln", "ida2_vol", "ida2_vol_kup", "ida2_vol_prod",
+    "ida3_eur", "ida3_pln", "ida3_vol", "ida3_vol_kup", "ida3_vol_prod",
+    "tot_min", "tot_max", "tot_vwap", "tot_vol", "tot_vol_kup", "tot_vol_prod"]
+
+try:
+    soubor = f"data/tge_rdb_{vcera}.parquet"
+    if not os.path.exists(soubor):
+        from bs4 import BeautifulSoup
+        dd = datetime.strptime(vcera, "%Y-%m-%d").strftime("%d-%m-%Y")
+        r = requests.get(f"https://tge.pl/energia-elektryczna-rdb?dateShow={dd}&dateAction=prev", headers=UA, timeout=120)
+        tab = BeautifulSoup(r.text, "lxml").find_all("table")[0]
+        radky = [[c.get_text(strip=True) for c in tr.find_all("td")] for tr in tab.find_all("tr")]
+        radky = [x for x in radky if len(x) == 29 and "_" in x[0]]
+        df = pd.DataFrame(radky, columns=TGE_SLOUPCE)
+        for c in TGE_SLOUPCE[1:]:
+            df[c] = pd.to_numeric(df[c].astype(str).str.replace("\xa0", "").str.replace(" ", "").str.replace(",", "."), errors="coerce")
+        if len(df) >= 100:                                # 24 H + 96 Q instrumentu; min prah proti torzu
+            df.insert(0, "business_date", vcera)
+            df["snapshot_ts"] = SNAP
+            df.to_parquet(soubor, index=False)
+            print(f"tge_rdb {vcera}: {len(df)} instrumentu")
+        else:
+            print(f"tge_rdb {vcera}: jen {len(df)} radku, neukladam (den mozna neni uzavren)")
+except Exception as e:
+    print(f"tge_rdb {vcera}: CHYBA {type(e).__name__}: {e} — pokracuji")
+
+try:
+    soubor = f"data/np_id_{vcera}.parquet"
+    if not os.path.exists(soubor):
+        j = requests.get(f"https://dataportal-api.nordpoolgroup.com/api/IntradayMarketStatistics?date={vcera}&deliveryArea=PL", headers=UA, timeout=60).json()
+        df = pd.DataFrame(j.get("contracts", []))
+        if len(df) >= 100:                                # 96 QH + 25 H kontraktu
+            df.insert(0, "business_date", vcera)
+            df["updateTime"] = j.get("updateTime")
+            df["snapshot_ts"] = SNAP
+            df.to_parquet(soubor, index=False)
+            print(f"np_id {vcera}: {len(df)} kontraktu")
+except Exception as e:
+    print(f"np_id {vcera}: CHYBA {type(e).__name__}: {e} — pokracuji")

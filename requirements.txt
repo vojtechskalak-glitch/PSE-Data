@@ -1,3 +1,5 @@
 requests
 pandas
 pyarrow
+beautifulsoup4
+lxml
