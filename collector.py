@@ -105,6 +105,8 @@ def otisk_dne(df):
 ARCHIVY = {
     "cen":     ("crb-rozl", [(NOW - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 7)]),
     "pwm_rdb": ("pwm-rdb",  [(NOW + timedelta(days=i)).strftime("%Y-%m-%d") for i in (-1, 0, 1)]),
+    # H11 KROK 0: bilancni curtailment OZE — 30min rozliseni staci na branu "lag prvni publikace > 60 min"
+    "poze_redoze": ("poze-redoze", [(NOW + timedelta(days=i)).strftime("%Y-%m-%d") for i in (-1, 0, 1)]),
 }
 for nazev, (endpoint, dny_arch) in ARCHIVY.items():
     for den in dny_arch:
@@ -125,6 +127,35 @@ for nazev, (endpoint, dny_arch) in ARCHIVY.items():
             vysledek.to_parquet(soubor, index=False)
             verze = len(vysledek) // max(len(novy), 1)
             print(f"{nazev} {den}: {'REVIZE' if stary is not None else 'prvni otisk'} (+{len(novy)} radku, verzi {verze})")
+        except Exception as e:
+            print(f"{nazev} {den}: CHYBA {type(e).__name__}: {e} — pokracuji")
+
+# ---------- doplnkova aukce moci (cmbu-tu ceny, mbu-tu objemy): verzovani po periodach ----------
+# H2 KROK 0 overen zivte 2.7.: clearing per 15 min, publikace +1,1-1,2 min po KONCI periody (58/58 period
+# s unikatnim pub_ts), bezici perioda videt neni. Rychlejsi nez bid stack (+2,1 min).
+PER_PERIOD = {"cmbu_tu": "cmbu-tu", "mbu_tu": "mbu-tu"}
+for nazev, endpoint in PER_PERIOD.items():
+    for den in [dny[0], vcera]:
+        try:
+            radky = stahni(endpoint, den)
+            if not radky:
+                continue
+            novy = pd.DataFrame(radky)
+            soubor = f"data/{nazev}_{den}.parquet"
+            stary, stare = None, {}
+            if os.path.exists(soubor):
+                stary = pd.read_parquet(soubor)
+                for per, g in stary.groupby("period"):
+                    posl = g[g["snapshot_ts"] == g["snapshot_ts"].max()]
+                    stare[per] = otisk_dne(posl)
+            zmenene = [g for per, g in novy.groupby("period") if stare.get(per) != otisk_dne(g)]
+            if not zmenene:
+                continue
+            pridat = pd.concat(zmenene, ignore_index=True)
+            pridat["snapshot_ts"] = SNAP
+            vysledek = pd.concat([stary, pridat], ignore_index=True) if stary is not None else pridat
+            vysledek.to_parquet(soubor, index=False)
+            print(f"{nazev} {den}: +{len(pridat)} radku ({len(zmenene)} period)")
         except Exception as e:
             print(f"{nazev} {den}: CHYBA {type(e).__name__}: {e} — pokracuji")
 
