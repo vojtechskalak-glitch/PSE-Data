@@ -1,0 +1,20 @@
+# Strategie a nálezy — repo je VEŘEJNÉ, tohle do něj nikdy nesmí
+CLAUDE.md
+reports/
+.claude/
+
+# Velká surová data — drž mimo git
+data_raw/
+
+# Zdrojové ZIPy
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Dočasné soubory
+_tmp*/
+*.tmp
