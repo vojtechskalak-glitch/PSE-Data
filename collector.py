@@ -87,3 +87,43 @@ for den in [dny[0], vcera]:   # dnes + vcera (pulnocni dobihani poslednich perio
     except Exception as e:
         # pad poeb-rbn NESMI zabit beh — BPKD/price_fcst snapshoty se musi commitnout vzdy
         print(f"poeb_rbn {den}: CHYBA {type(e).__name__}: {e} — pokracuji")
+
+# ---------- verzovane DENNI archivy: prvni otisky a revize ----------
+# cen (crb-rozl): CEN + slozky. Prvni print ~D+1 poledne, revizni vlna ~D+4 (19 % dni), ~D+52 (3 %).
+#   PSE prepisuje bez historie -> archivujeme KAZDOU verzi dne (H10: korekce EV vsech chvostovych backtestu).
+# pwm_rdb (pwm-rdb): intradenni nominace vymen per hranice, updaty ~hodinove vc. budoucich period.
+# Den se ulozi znovu JEN kdyz se obsah zmenil (hash bez publication_ts).
+
+def otisk_dne(df):
+    ignoruj = {"publication_ts", "publication_ts_utc", "snapshot_ts"}
+    s = df[[c for c in df.columns if c not in ignoruj]].copy()
+    for c in s.columns:
+        if pd.api.types.is_numeric_dtype(s[c]):
+            s[c] = s[c].astype(float).round(4)
+    return hashlib.md5(repr(sorted(map(str, s.to_numpy().tolist()))).encode()).hexdigest()
+
+ARCHIVY = {
+    "cen":     ("crb-rozl", [(NOW - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 7)]),
+    "pwm_rdb": ("pwm-rdb",  [(NOW + timedelta(days=i)).strftime("%Y-%m-%d") for i in (-1, 0, 1)]),
+}
+for nazev, (endpoint, dny_arch) in ARCHIVY.items():
+    for den in dny_arch:
+        try:
+            radky = stahni(endpoint, den)
+            if not radky:
+                continue                                   # den jeste nepublikovan — zadna zprava
+            novy = pd.DataFrame(radky)
+            soubor = f"data/{nazev}_{den}.parquet"
+            stary = None
+            if os.path.exists(soubor):
+                stary = pd.read_parquet(soubor)
+                posledni = stary[stary["snapshot_ts"] == stary["snapshot_ts"].max()]
+                if otisk_dne(posledni) == otisk_dne(novy):
+                    continue                               # beze zmen — neukladat, nelogovat (6 dni x 48 behu)
+            novy["snapshot_ts"] = SNAP
+            vysledek = pd.concat([stary, novy], ignore_index=True) if stary is not None else novy
+            vysledek.to_parquet(soubor, index=False)
+            verze = len(vysledek) // max(len(novy), 1)
+            print(f"{nazev} {den}: {'REVIZE' if stary is not None else 'prvni otisk'} (+{len(novy)} radku, verzi {verze})")
+        except Exception as e:
+            print(f"{nazev} {den}: CHYBA {type(e).__name__}: {e} — pokracuji")
