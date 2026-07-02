@@ -60,26 +60,30 @@ def otisk(df_p):
 
 vcera = (NOW - timedelta(days=1)).strftime("%Y-%m-%d")
 for den in [dny[0], vcera]:   # dnes + vcera (pulnocni dobihani poslednich period a pozdni revize)
-    radky = stahni("poeb-rbn", den)
-    if not radky:
-        print(f"poeb_rbn {den}: nic nepublikovano"); continue
-    novy = pd.DataFrame(radky)
-    soubor = f"data/poeb_rbn_{den}.parquet"
+    try:
+        radky = stahni("poeb-rbn", den)
+        if not radky:
+            print(f"poeb_rbn {den}: nic nepublikovano"); continue
+        novy = pd.DataFrame(radky)
+        soubor = f"data/poeb_rbn_{den}.parquet"
 
-    stary, stare_otisky = None, {}
-    if os.path.exists(soubor):
-        stary = pd.read_parquet(soubor)
-        for per, g in stary.groupby("period"):            # posledni ulozena verze kazde periody
-            posledni = g[g["snapshot_ts"] == g["snapshot_ts"].max()]
-            stare_otisky[per] = otisk(posledni)
+        stary, stare_otisky = None, {}
+        if os.path.exists(soubor):
+            stary = pd.read_parquet(soubor)
+            for per, g in stary.groupby("period"):        # posledni ulozena verze kazde periody
+                posledni = g[g["snapshot_ts"] == g["snapshot_ts"].max()]
+                stare_otisky[per] = otisk(posledni)
 
-    zmenene = [g for per, g in novy.groupby("period") if stare_otisky.get(per) != otisk(g)]
-    if not zmenene:
-        print(f"poeb_rbn {den}: beze zmen ({novy['period'].nunique()} period beze zmeny)")
-        continue
-    pridat = pd.concat(zmenene, ignore_index=True)
-    pridat["snapshot_ts"] = SNAP
-    vysledek = pd.concat([stary, pridat], ignore_index=True) if stary is not None else pridat
-    vysledek.to_parquet(soubor, index=False)
-    novych = sum(1 for g in zmenene if g["period"].iloc[0] not in stare_otisky)
-    print(f"poeb_rbn {den}: +{len(pridat)} radku | {novych} novych period, {len(zmenene)-novych} revizi, celkem {len(vysledek)}")
+        zmenene = [g for per, g in novy.groupby("period") if stare_otisky.get(per) != otisk(g)]
+        if not zmenene:
+            print(f"poeb_rbn {den}: beze zmen ({novy['period'].nunique()} period beze zmeny)")
+            continue
+        pridat = pd.concat(zmenene, ignore_index=True)
+        pridat["snapshot_ts"] = SNAP
+        vysledek = pd.concat([stary, pridat], ignore_index=True) if stary is not None else pridat
+        vysledek.to_parquet(soubor, index=False)
+        novych = sum(1 for g in zmenene if g["period"].iloc[0] not in stare_otisky)
+        print(f"poeb_rbn {den}: +{len(pridat)} radku | {novych} novych period, {len(zmenene)-novych} revizi, celkem {len(vysledek)}")
+    except Exception as e:
+        # pad poeb-rbn NESMI zabit beh — BPKD/price_fcst snapshoty se musi commitnout vzdy
+        print(f"poeb_rbn {den}: CHYBA {type(e).__name__}: {e} — pokracuji")
