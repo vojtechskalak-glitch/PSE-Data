@@ -191,6 +191,34 @@ try:
 except Exception as e:
     print(f"tge_rdb {vcera}: CHYBA {type(e).__name__}: {e} — pokracuji")
 
+# ---------- ranni cteni trhu: TGE kontinual v 5:15 a 6:15 lokalne ----------
+# Validace Ranniho tuseni: co trh "vi" rano o dnesnich dodavkach (kumulativni CT statistiky
+# rozjednanych instrumentu). Pozitivni nalez trzni znalost validuje; nulovy ji NEVYVRACI,
+# protoze ridke obchody neznamenaji prazdnou knihu.
+try:
+    from zoneinfo import ZoneInfo
+    lok = NOW.astimezone(ZoneInfo("Europe/Warsaw"))
+    if lok.hour in (5, 6) and 5 <= lok.minute <= 40:
+        from bs4 import BeautifulSoup
+        dnes = lok.strftime("%Y-%m-%d")
+        r = requests.get("https://tge.pl/energia-elektryczna-rdb", headers=UA, timeout=120)
+        tab = BeautifulSoup(r.text, "lxml").find_all("table")[0]
+        radky = [[c.get_text(strip=True) for c in tr.find_all("td")] for tr in tab.find_all("tr")]
+        radky = [x for x in radky if len(x) == 29 and "_" in x[0]]
+        df = pd.DataFrame(radky, columns=TGE_SLOUPCE)
+        for c in TGE_SLOUPCE[1:]:
+            df[c] = pd.to_numeric(df[c].astype(str).str.replace("\xa0", "").str.replace(" ", "").str.replace(",", "."), errors="coerce")
+        if len(df) >= 50 and str(df["instrument"].iloc[0]).startswith(dnes):
+            df.insert(0, "business_date", dnes)
+            df["snapshot_ts"] = SNAP
+            soubor = f"data/tge_rano_{dnes}.parquet"
+            if os.path.exists(soubor):
+                df = pd.concat([pd.read_parquet(soubor), df], ignore_index=True)
+            df.to_parquet(soubor, index=False)
+            print(f"tge_rano {dnes}: snapshot {lok.strftime('%H:%M')} ({len(df)} instrumentu)")
+except Exception as e:
+    print(f"tge_rano: CHYBA {type(e).__name__}: {e} — pokracuji")
+
 try:
     soubor = f"data/np_id_{vcera}.parquet"
     if not os.path.exists(soubor):
