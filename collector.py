@@ -3,11 +3,14 @@
 # poeb-rbn (bid stack energie): verzovani po periodach — perioda se ulozi poprve a pak jen kdyz se zmeni.
 import requests, os, hashlib
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import pandas as pd
 
 BASE = "https://api.raporty.pse.pl/api/"
 NOW  = datetime.now(timezone.utc)
 SNAP = NOW.strftime("%Y-%m-%d %H:%M:%S")
+# business_date u PSE = lokalni kalendarni den; odvozovat z UTC znamenalo nocni slepotu 00:15-02:15
+DEN_LOK = NOW.astimezone(ZoneInfo("Europe/Warsaw"))
 
 ENDPOINTY = {
     "BPKD":       ["pdgobpkd", "pdgob"],   # CELY plan koordynacyjny (37 sloupcu)
@@ -26,7 +29,7 @@ def stahni(endpoint, den):
     return out
 
 os.makedirs("data", exist_ok=True)
-dny = [(NOW + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(DNI_DOPREDU)]
+dny = [(DEN_LOK + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(DNI_DOPREDU)]
 
 for nazev, varianty in ENDPOINTY.items():
     endpoint = next((ep for ep in varianty if stahni(ep, dny[0])), None)   # najdi funkcni
@@ -58,7 +61,7 @@ def otisk(df_p):
     radky = sorted(map(tuple, s.to_numpy().tolist()))
     return hashlib.md5(repr(radky).encode()).hexdigest()
 
-vcera = (NOW - timedelta(days=1)).strftime("%Y-%m-%d")
+vcera = (DEN_LOK - timedelta(days=1)).strftime("%Y-%m-%d")
 for den in [dny[0], vcera]:   # dnes + vcera (pulnocni dobihani poslednich period a pozdni revize)
     try:
         radky = stahni("poeb-rbn", den)
@@ -103,10 +106,10 @@ def otisk_dne(df):
     return hashlib.md5(repr(sorted(map(str, s.to_numpy().tolist()))).encode()).hexdigest()
 
 ARCHIVY = {
-    "cen":     ("crb-rozl", [(NOW - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 7)]),
-    "pwm_rdb": ("pwm-rdb",  [(NOW + timedelta(days=i)).strftime("%Y-%m-%d") for i in (-1, 0, 1)]),
-    # H11 KROK 0: bilancni curtailment OZE — 30min rozliseni staci na branu "lag prvni publikace > 60 min"
-    "poze_redoze": ("poze-redoze", [(NOW + timedelta(days=i)).strftime("%Y-%m-%d") for i in (-1, 0, 1)]),
+    "cen":     ("crb-rozl", [(DEN_LOK - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 7)]),
+    "pwm_rdb": ("pwm-rdb",  [(DEN_LOK + timedelta(days=i)).strftime("%Y-%m-%d") for i in (-1, 0, 1)]),
+    # brana nastupu curtailmentu prosla 8.7.; 30min rozliseni sberu ponechano
+    "poze_redoze": ("poze-redoze", [(DEN_LOK + timedelta(days=i)).strftime("%Y-%m-%d") for i in (-1, 0, 1)]),
 }
 for nazev, (endpoint, dny_arch) in ARCHIVY.items():
     for den in dny_arch:
