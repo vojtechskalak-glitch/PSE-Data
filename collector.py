@@ -232,3 +232,18 @@ try:
             print(f"np_id {vcera}: {len(df)} kontraktu")
 except Exception as e:
     print(f"np_id {vcera}: CHYBA {type(e).__name__}: {e} — pokracuji")
+
+# ---------- ranni svodka: vyhled pasem CEN na zitrek + intradenni aktualizace ----------
+# Odpoledni okno 13:50-14:40 lokalne (po publikaci day-ahead ~13:45): svodka na ZITREK.
+# Ranni okno 9:30-10:30 lokalne: doplneni intradenni sekce do dnesni svodky.
+# Oboji idempotentni (existence souboru / sekce), pad NESMI zabit sber -> guard try/except.
+try:
+    from zoneinfo import ZoneInfo
+    import svodka as svodka_mod
+    lok = NOW.astimezone(ZoneInfo("Europe/Warsaw"))
+    if (lok.hour == 13 and lok.minute >= 50) or (lok.hour == 14 and lok.minute <= 40):
+        svodka_mod.odpoledni_svodka((lok + timedelta(days=1)).strftime("%Y-%m-%d"))
+    if (lok.hour == 9 and lok.minute >= 30) or (lok.hour == 10 and lok.minute <= 30):
+        svodka_mod.ranni_aktualizace(lok.strftime("%Y-%m-%d"))
+except Exception as e:
+    print(f"svodka: CHYBA {type(e).__name__}: {e} — pokracuji")
