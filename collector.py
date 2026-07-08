@@ -274,4 +274,22 @@ try:
 except Exception as e:
     print(f"np_id {vcera}: CHYBA {type(e).__name__}: {e} — pokracuji")
 
-# Svodka se od 8.7.2026 generuje v privatnim repu PSE-svodka (Telegram); zde uz nebezi.
+# ---------- denni aktivovany vyber (oeb-bpkdbo): vcerejsek po 14:15 ----------
+# Seznam nabidek, ktere PSE aktivovala, se pro den D publikuje D+1 ~14:00. Denni pull
+# je nutny pro promennou rezimu zlomkovych aktivaci (hlidac skladby). Idempotentni.
+try:
+    if DEN_LOK.hour > 14 or (DEN_LOK.hour == 14 and DEN_LOK.minute >= 15):
+        soubor = f"data/oeb_bpkdbo_{vcera}.parquet"
+        if not os.path.exists(soubor):
+            radky = stahni("oeb-bpkdbo", vcera)
+            if len(radky) >= 500:                          # cely den ma tisice radku; torzo neukladat
+                df = pd.DataFrame(radky)
+                df["snapshot_ts"] = SNAP
+                df.to_parquet(soubor, index=False)
+                print(f"oeb_bpkdbo {vcera}: {len(df)} radku")
+            else:
+                print(f"oeb_bpkdbo {vcera}: jen {len(radky)} radku, jeste nepublikovano cele")
+except Exception as e:
+    print(f"oeb_bpkdbo {vcera}: CHYBA {type(e).__name__}: {e} — pokracuji")
+
+# Svodka se od 8.7.2026 generuje v privatnim repu PSEsvodka (Telegram); zde uz nebezi.
