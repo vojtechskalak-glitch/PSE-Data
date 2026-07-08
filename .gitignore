@@ -7,6 +7,11 @@ reports/
 .env
 *.token
 
+# Svodka žije v privátním repu PSE-svodka — sem už nepatří
+svodka/
+svodka.py
+svodka_model.json
+
 # Velká surová data — drž mimo git
 data_raw/
 
