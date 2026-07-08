@@ -162,6 +162,44 @@ for nazev, endpoint in PER_PERIOD.items():
         except Exception as e:
             print(f"{nazev} {den}: CHYBA {type(e).__name__}: {e} — pokracuji")
 
+# ---------- JAO intradenni alokacni limity (Core ID CCR): verze pred IDA1 a pred IDA2 ----------
+# PSE limity pozice PL vuci Evrope existuji ve 3 verzich: day-ahead (core/allocationConstraint),
+# IDCCA (publikace ~13:55-14:40 D-1 lokalne, tj. PRED gate IDA1 15:00) a IDCCB (~20:45-22:25 D-1,
+# tesne kolem gate IDA2 22:00). import_PL/export_PL jsou znamenkove meze pozice PL:
+# zaporny import_PL = dovoz zavreny a vynucen minimalni export (obdobne export_PL).
+# Verzovani obsahovym hashem dne (otisk_dne); sloupec id od JAO zahazujeme (technicke cislo radku).
+JAO_ID_DATASETY = {"jao_id1": "IDCCA_allocationConstraint", "jao_id2": "IDCCB_allocationConstraint"}
+JAO_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+for nazev, dataset in JAO_ID_DATASETY.items():
+    for posun in (0, 1):                                   # dnes + zitra (zitrek pribyva odpoledne a vecer)
+        den = (DEN_LOK + timedelta(days=posun)).strftime("%Y-%m-%d")
+        try:
+            pulnoc = (DEN_LOK + timedelta(days=posun)).replace(hour=0, minute=0, second=0, microsecond=0)
+            od = pulnoc.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            do = (pulnoc + timedelta(days=1)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            r = requests.get(f"https://publicationtool.jao.eu/coreID/api/data/{dataset}",
+                             params={"FromUtc": od, "ToUtc": do}, headers=JAO_UA, timeout=60)
+            if not r.ok:
+                continue
+            radky = r.json().get("data", [])
+            if not radky:
+                continue                                   # session jeste nepublikovana — zadna zprava
+            novy = pd.DataFrame(radky).drop(columns=["id"], errors="ignore")
+            soubor = f"data/{nazev}_{den}.parquet"
+            stary = None
+            if os.path.exists(soubor):
+                stary = pd.read_parquet(soubor)
+                posledni = stary[stary["snapshot_ts"] == stary["snapshot_ts"].max()]
+                if otisk_dne(posledni.drop(columns=["id"], errors="ignore")) == otisk_dne(novy):
+                    continue                               # beze zmen — neukladat, nelogovat
+            novy["snapshot_ts"] = SNAP
+            vysledek = pd.concat([stary, novy], ignore_index=True) if stary is not None else novy
+            vysledek.to_parquet(soubor, index=False)
+            print(f"{nazev} {den}: {'REVIZE' if stary is not None else 'prvni otisk'} (+{len(novy)} radku)")
+        except Exception as e:
+            # pad JAO NESMI zabit sber PSE dat — pokracujeme
+            print(f"{nazev} {den}: CHYBA {type(e).__name__}: {e} — pokracuji")
+
 # ---------- denni PL intraday statistiky: TGE RDB (CT+IDA, PLN) + Nord Pool kontrakty (EUR) ----------
 # Idempotentni: jen vcerejsi den, jen pokud soubor neexistuje -> 48 pokusu denne, zadny novy workflow.
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
